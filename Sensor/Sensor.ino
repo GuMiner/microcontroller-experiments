@@ -44,7 +44,10 @@ void loop() {
   delay(2000);
 }
 
+int lastX = 0;
 int currentX = 0;
+int nextX = 1;
+int lastY = -1;
 
 #define CHART_START 35
 
@@ -54,9 +57,13 @@ void drawMeasurementBounds() {
 }
 
 void drawMeasurement() {
-  // Text measurement
+  // Text measurement. Ensure text roughly follows the current chart
   display.fillRect(0, 24, SCREEN_WIDTH, 11, SSD1306_BLACK);
-  display.setCursor(currentX % (SCREEN_WIDTH * 3 / 4), 24);
+  int displayOffset = currentX;
+  if (displayOffset > (SCREEN_WIDTH * 3 / 4)) {
+    displayOffset = SCREEN_WIDTH * 3 / 4;
+  }
+  display.setCursor(displayOffset, 24);
 
   int measurement = GetCO2PPM();
   display.print(measurement);
@@ -66,15 +73,42 @@ void drawMeasurement() {
   // Chart measurement: Because 36-64 is not erased, persist pixels in there for charting/
   // Measurement values are from ~400 to 2000. Squash that 16,000 range into the 27 pixels available
   // (apx 60 ppm per pixel change). 
-  int adjustedMeasurement = (measurement / 60) - 6; // Approximately now from 0 to 27
+  int adjustedMeasurement = (SCREEN_HEIGHT - ((measurement / 60) - 6)); // Approximately now from 0 to 27
+  adjustedMeasurement = fitToRange(adjustedMeasurement, CHART_START + 1, SCREEN_HEIGHT - 2);
+  if (lastY == -1) {
+    lastY = adjustedMeasurement; // First-time fix so that point-to-point lines start fine
+  }
+
   display.drawLine(currentX, CHART_START + 1, currentX, SCREEN_HEIGHT - 2, SSD1306_BLACK); // Wipe line of old measurement
-  display.drawPixel(currentX, SCREEN_HEIGHT - adjustedMeasurement, SSD1306_WHITE);
+  display.drawLine(lastX, lastY, currentX, adjustedMeasurement, SSD1306_WHITE);
+
+  // Render current chart position
+  if (nextX != SCREEN_WIDTH) {
+    display.drawLine(nextX, CHART_START + 1, nextX, SCREEN_HEIGHT - 2, SSD1306_WHITE);
+  }
+
+  lastY = adjustedMeasurement;
 
   // Scroll chart
+  lastX = currentX;
   currentX += 1;
+  nextX += 1;
   if (currentX == SCREEN_WIDTH) {
+    lastX = 0;
     currentX = 0;
+    nextX = 1;
   }
+}
+
+int fitToRange(int value, int min, int max)
+{
+  if (value < min) {
+    value = min;
+  } else if (value > max) {
+    value = max;
+  }
+
+  return value;
 }
 
 void drawDeviceInfo() {
