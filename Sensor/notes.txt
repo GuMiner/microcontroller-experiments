@@ -1,0 +1,1 @@
+CDSensor.h/cpp are copied because the Arduino IDE does not properly deal with relative paths.
