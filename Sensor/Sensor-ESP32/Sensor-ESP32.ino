@@ -2,6 +2,8 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_MPL3115A2.h>
+
 #include "CDSensor.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -14,6 +16,7 @@
 
 // Display: SSD1306 monocolor, 0.96-inch display with 128×64 pixels 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_MPL3115A2 baro;
 
 void setup() {
   Wire.begin(); // Setup display / sensor I2C
@@ -30,12 +33,18 @@ void setup() {
   display.setTextColor(SSD1306_WHITE); // Draw white text (B/W display)
   display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
+  baro.begin();
+  baro.setSeaPressure(1013.26);
+
   // Draw first-time-only device info
-  drawDeviceInfo();
   drawMeasurementBounds();
 }
 
 void loop() {
+  display.fillRect(0, 0, SCREEN_WIDTH, 11 + 24, SSD1306_BLACK);
+
+  display.setCursor(0, 0);
+  drawDeviceInfo();
   drawMeasurement();
 
   // Flash the LED for a half-second after each measurement update
@@ -58,7 +67,6 @@ void drawMeasurementBounds() {
 
 void drawMeasurement() {
   // Text measurement. Ensure text roughly follows the current chart
-  display.fillRect(0, 24, SCREEN_WIDTH, 11, SSD1306_BLACK);
   int displayOffset = currentX;
   if (displayOffset > (SCREEN_WIDTH * 3 / 4)) {
     displayOffset = SCREEN_WIDTH * 3 / 4;
@@ -116,14 +124,26 @@ void drawDeviceInfo() {
   unsigned int firmwareVersion = GetFirmwareVersion();
   bool isDeviceHealthy = IsDeviceHealthy();
 
+   float pressure = baro.getPressure();
+  float altitude = baro.getAltitude();
+  float temperature = baro.getTemperature();
+
   display.print(F(SENSOR_NAME));
-  display.println(isDeviceHealthy ? "Online" : "OFFLINE");
+  display.print(isDeviceHealthy ? "+ " : "- ");
+  display.print(pressure);
+  display.println(" hPa");
 
-  display.print(F("Serial: "));
-  display.println(serialNumber);
+  display.print(F("S: "));
+  display.print(serialNumber);
+  display.print(" ");
+  display.printf("%.1f", altitude/3.2808);
+  display.println(" ft");
 
-  display.print(F("Firmware: "));
-  display.println(firmwareVersion);
+  display.print(F("F: "));
+  display.print(firmwareVersion);
+  display.print(" ");
+  display.printf("%.1f", ((temperature * 9.0f) / 5.0f) + 32.0f);
+  display.println(" F");
 }
 
 void flashLED() {
