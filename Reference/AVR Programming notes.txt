@@ -1,0 +1,18 @@
+- Install Atmel Studio (now Microchip Studio)
+- Setup the AVR programmer (USBASP) wiring
+- Setup the AVR programmer driver
+  - Download Zadig, install libusb-win32 for USBasp
+- Run the programming command:
+  - Verify the connected device
+      avrdude -p attiny24 -c usbasp 
+  - Write a new program to the device
+      avrdude -p attiny24 -c usbasp -U CoilWinder.hex
+
+- To get the fuse values
+    avrdude -c usbasp -p attiny24 -U lfuse:r:-:i -v
+
+- To set the fuse so EEPROM can be used as 128-bit persistent memory:
+    avrdude -p attiny24 -c usbasp -U efuse:w:0xFF:m  -U hfuse:w:0xD7:m  -U lfuse:w:0x62:m
+
+- To read what is saved in EEPROM:
+    avrdude -c usbasp -p attiny24 -U eeprom:r:-:i
