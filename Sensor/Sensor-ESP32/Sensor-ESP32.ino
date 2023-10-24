@@ -36,6 +36,12 @@ float lastAltitude;
 float lastTemperature;
 int lastCo2;
 
+float avgPressure = 0;
+float avgAltitude = 0;
+float avgTemperature = 0;
+int avgCo2 = 0;
+int recordedMeasurements = 0;
+
 void setup() {
   Wire.begin(); // Setup display / sensor I2C
   Serial.begin(9600); // For diagnostics
@@ -81,10 +87,16 @@ void loop() {
 
     // Compute JSON document of measurements and upload.
     StaticJsonDocument<200> doc;
-    doc["pressureHpa"] = lastPressure;
-    doc["altitudeFt"] = lastAltitude;
-    doc["temperatureC"] = lastTemperature;
-    doc["co2Ppm"] = lastCo2;
+    doc["pressureHpa"] = (avgPressure / recordedMeasurements);
+    doc["altitudeFt"] = (avgAltitude / recordedMeasurements);
+    doc["temperatureC"] = (avgTemperature / recordedMeasurements);
+    doc["co2Ppm"] = (avgCo2 / recordedMeasurements);
+
+    avgPressure = 0;
+    avgAltitude = 0;
+    avgTemperature = 0;
+    avgCo2 = 0;
+    recordedMeasurements = 0;
     
     String json;
     serializeJson(doc, json);
@@ -142,6 +154,9 @@ void drawMeasurement() {
   display.setCursor(displayOffset, 24);
 
   lastCo2 = GetCO2PPM();
+  avgCo2 += lastCo2;
+  recordedMeasurements++;
+
   display.print(lastCo2);
   display.println(F(SENSOR_UNITS));
   display.display();
@@ -157,6 +172,10 @@ void drawDeviceInfo() {
   lastPressure = baro.getPressure();
   lastAltitude = baro.getAltitude()/3.2808;
   lastTemperature = ((baro.getTemperature() * 9.0f) / 5.0f) + 32.0f;
+
+  avgPressure += lastPressure;
+  avgAltitude += lastAltitude;
+  avgTemperature += lastTemperature;
 
   display.print(F(SENSOR_NAME));
   display.print(isDeviceHealthy ? "+ " : "- ");
