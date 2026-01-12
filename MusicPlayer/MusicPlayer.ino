@@ -1,54 +1,62 @@
-/**************************************************************************/
-/*!
-    @file     readntag203.pde
-    @author   KTOWN (Adafruit Industries)
-    @license  BSD (see license.txt)
-
-    This example will wait for any NTAG203 or NTAG213 card or tag,
-    and will attempt to read from it.
-
-    This is an example sketch for the Adafruit PN532 NFC/RFID breakout boards
-    This library works with the Adafruit NFC breakout
-      ----> https://www.adafruit.com/products/364
-
-    Check out the links above for our tutorials and wiring diagrams
-    These chips use SPI or I2C to communicate.
-
-    Adafruit invests time and resources providing this open source code,
-    please support Adafruit and open-source hardware by purchasing
-    products from Adafruit!
-*/
-/**************************************************************************/
 #include <Wire.h>
 #include <Adafruit_PN532.h>
+#include <SPI.h>
+#include <Adafruit_VS1053.h>
+#include <SD.h>
 
-// If using the breakout with SPI, define the pins for SPI communication.
-// #define PN532_SCK  (2)
-// #define PN532_MOSI (3)
-// #define PN532_SS   (4)
-// #define PN532_MISO (5)
+// Full wiring diagram:
+/*
+// ###### I2C, PN532 NFC ######
+5V -- NFC (VCC)
+GND -- NFC (GND)
+D5 --- NFC (IRQ)
+D6 --- NFC (RESET)
+SDA --- NFC (SDA)
+SCL --- NFC (SCL)
 
-// If using the breakout or shield with I2C, define just the pins connected
-// to the IRQ and reset lines.  Use the values below (2, 3) for the shield!
-#define PN532_IRQ   (2)
-#define PN532_RESET (3)  // Not connected by default on the NFC Shield
+// Because the UNO R4 Minima doesn't include I2C pullup resistors:
+SDA --- 4.7k Ω --- 5 V
+SCL --- 4.7k Ω --- 5 V
+
+// By using SDA and SCL on this Arduino, A4 and A5 are also in use
+A4 --- SDA
+A5 --- SCL
 
 
-// Uncomment just _one_ line below depending on how your breakout or shield
-// is connected to the Arduino:
+// ###### SPI, VS1053 ######
 
-// Use this line for a breakout with a software SPI connection (recommended):
-// Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
+5V -- VS1053 (VCC)
+GND -- VS1053 (GND)
 
-// Use this line for a breakout with a hardware SPI connection.  Note that
-// the PN532 SCK, MOSI, and MISO pins need to be connected to the Arduino's
-// hardware SPI SCK, MOSI, and MISO pins.  On an Arduino Uno these are
-// SCK = 13, MOSI = 11, MISO = 12.  The SS line can be any digital IO pin.
-//Adafruit_PN532 nfc(PN532_SS);
+D3 --- VS1053 (DREQ)
+D4 --- VS1053 (SDCS)
+D8 --- VS1053 (XDCS)
 
-// Or use this line for a breakout or shield with an I2C connection:
+// As a note, in the UNO R4 Minima CS == SSLB, MOSI == COPI, MISO == CIPO, CLK == RSPCK
+D9 --- VS1053 (RST)
+D10 --- VS1053 (CS)
+D11 --- VS1053 (MOSI)
+D12 --- VS1053 (MISO)
+D13 --- VS1053 (CLK)
+
+*/
+
+// TODO -- solder and wire these, as IRQ (interrupts) will be valuable
+#define PN532_IRQ   2
+#define PN532_RESET 6  // Not connected by default on the NFC Shield
+
+
+#define DREQ 3       // VS1053 Data request, ideally an Interrupt pin
+#define CARDCS 4     // Card chip select pin
+// DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
+#define BREAKOUT_DCS    8      // VS1053 Data/command select pin (output)
+#define BREAKOUT_RESET  9      // VS1053 reset pin (output)
+#define BREAKOUT_CS     10     // VS1053 chip select pin (output)
+
+
 Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 
+Adafruit_VS1053_FilePlayer musicPlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
 
 void setup(void) {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -69,9 +77,28 @@ void setup(void) {
   // Got ok data, print it out!
   Serial.print("Found chip PN5"); Serial.println((versiondata>>24) & 0xFF, HEX);
   Serial.print("Firmware ver. "); Serial.print((versiondata>>16) & 0xFF, DEC);
-  Serial.print('.'); Serial.println((versiondata>>8) & 0xFF, DEC);
 
-  Serial.println("Waiting for an ISO14443A Card ...");
+    if (! musicPlayer.begin()) { // initialise the music player
+     Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
+     while (1);
+  }
+  Serial.println(F("VS1053 found"));
+  
+   if (!SD.begin(CARDCS)) {
+    Serial.println(F("SD failed, or not present"));
+    while (1);  // don't do anything more
+  }
+
+  // list files
+  printDirectory(SD.open("/"), 0);
+  
+  // Set volume for left, right channels. lower numbers == louder volume!
+  musicPlayer.setVolume(20,20);
+
+   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT); 
+     // Play another file in the background, REQUIRES interrupts!
+  Serial.println(F("Playing track 002"));
+  musicPlayer.startPlayingFile("/test1.mp3");
 }
 
 void loop(void) {
