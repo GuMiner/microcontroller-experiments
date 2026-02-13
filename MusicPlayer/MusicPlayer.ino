@@ -45,23 +45,23 @@ D13 --- VS1053 (CLK)
 #define PN532_RESET 6  // Not connected by default on the NFC Shield
 #define PN532_CHIP_SELECT 10  // The 'SS' pin
 
-#define DREQ 1       // VS1053 Data request, ideally an Interrupt pin
+#define DREQ 3      // VS1053 Data request, ideally an Interrupt pin
 #define CARDCS 4     // Card chip select pin
 // DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
-#define BREAKOUT_DCS    8      // VS1053 Data/command select pin (output)
-#define BREAKOUT_RESET  9      // VS1053 reset pin (output)
-#define BREAKOUT_CS     10     // VS1053 chip select pin (output)
+#define BREAKOUT_DCS    7      // VS1053 Data/command select pin (output)
+#define BREAKOUT_RESET  8      // VS1053 reset pin (output)
+#define BREAKOUT_CS    9     // VS1053 chip select pin (output)
 // THESE CHIP SELECT PINS NEE
 
 Adafruit_PN532 nfc(PN532_CHIP_SELECT);
 
-// Adafruit_VS1053_FilePlayer musicPlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
+Adafruit_VS1053_FilePlayer musicPlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
 
 void setup(void) {
   pinMode(LED_BUILTIN, OUTPUT); // Shared with SPI pin, weird. Doens't work well then though.
 
 
-  Serial.begin(115200);
+Serial.begin(115200);
  while (!Serial) delay(10); // for Leonardo/Micro/Zero
 
   Serial.println("Hello!");
@@ -77,7 +77,7 @@ void setup(void) {
   Serial.print("Found chip PN5"); Serial.println((versiondata>>24) & 0xFF, HEX);
   Serial.print("Firmware ver. "); Serial.print((versiondata>>16) & 0xFF, DEC);
 
-/*
+
   if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
      while (1);
@@ -99,7 +99,7 @@ void setup(void) {
      // Play another file in the background, REQUIRES interrupts!
   Serial.println(F("Playing track"));
   musicPlayer.startPlayingFile("/test1.mp3");
-  */
+  
 }
 
 uint8_t readAsASCII(uint8_t* data, int idx) {
