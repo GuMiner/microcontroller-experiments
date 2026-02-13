@@ -1,8 +1,8 @@
 #include <Wire.h>
-#include <Adafruit_PN532.h>
 #include <SPI.h>
-#include <Adafruit_VS1053.h>
 #include <SD.h>
+#include <Adafruit_PN532.h>
+#include <Adafruit_VS1053.h>
 
 // Full wiring diagram:
 /*
@@ -21,7 +21,6 @@ SCL --- 4.7k Ω --- 5 V
 // By using SDA and SCL on this Arduino, A4 and A5 are also in use
 A4 --- SDA
 A5 --- SCL
-
 
 // ###### SPI, VS1053 ######
 
@@ -42,28 +41,28 @@ D13 --- VS1053 (CLK)
 */
 
 // TODO -- solder and wire these, as IRQ (interrupts) will be valuable
-#define PN532_IRQ   2
+#define PN532_IRQ   5
 #define PN532_RESET 6  // Not connected by default on the NFC Shield
+#define PN532_CHIP_SELECT 10  // The 'SS' pin
 
-
-#define DREQ 3       // VS1053 Data request, ideally an Interrupt pin
+#define DREQ 1       // VS1053 Data request, ideally an Interrupt pin
 #define CARDCS 4     // Card chip select pin
 // DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
 #define BREAKOUT_DCS    8      // VS1053 Data/command select pin (output)
 #define BREAKOUT_RESET  9      // VS1053 reset pin (output)
 #define BREAKOUT_CS     10     // VS1053 chip select pin (output)
+// THESE CHIP SELECT PINS NEE
 
+Adafruit_PN532 nfc(PN532_CHIP_SELECT);
 
-Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
-
-Adafruit_VS1053_FilePlayer musicPlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
+// Adafruit_VS1053_FilePlayer musicPlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
 
 void setup(void) {
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT); // Shared with SPI pin, weird. Doens't work well then though.
 
 
   Serial.begin(115200);
-  while (!Serial) delay(10); // for Leonardo/Micro/Zero
+ while (!Serial) delay(10); // for Leonardo/Micro/Zero
 
   Serial.println("Hello!");
 
@@ -78,12 +77,13 @@ void setup(void) {
   Serial.print("Found chip PN5"); Serial.println((versiondata>>24) & 0xFF, HEX);
   Serial.print("Firmware ver. "); Serial.print((versiondata>>16) & 0xFF, DEC);
 
-    if (! musicPlayer.begin()) { // initialise the music player
+/*
+  if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
      while (1);
   }
   Serial.println(F("VS1053 found"));
-  
+ 
    if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
     while (1);  // don't do anything more
@@ -97,14 +97,43 @@ void setup(void) {
 
    musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT); 
      // Play another file in the background, REQUIRES interrupts!
-  Serial.println(F("Playing track 002"));
+  Serial.println(F("Playing track"));
   musicPlayer.startPlayingFile("/test1.mp3");
+  */
+}
+
+uint8_t readAsASCII(uint8_t* data, int idx) {
+  return (uint8_t)data[idx] - 48; // 49 == 1 in ASCII
+}
+
+int8_t readTagNumber() {
+  // Based on how the tags were formatted, page 10 has the tag number
+  // Arguably I could use the tag UID, but because I've already programmed tags from 1 to 100 I'll use that.
+  const uint8_t PAGE_NUMBER = 10;
+
+  uint8_t data[4];
+  uint8_t success = nfc.ntag2xx_ReadPage(PAGE_NUMBER, data);
+
+  // The tag number is one to 3 bytes long. data[0] is 2F (/), data[1,2,3] is an ascii number or 254 (end)
+  uint8_t currentIdx = 1; // skip the '/'
+  int8_t result = readAsASCII(data, currentIdx);
+  while (data[currentIdx + 1] != 254) {
+    result = result * 10;
+    result = result + readAsASCII(data, currentIdx + 1);
+
+    currentIdx = currentIdx + 1;
+    if (currentIdx >= 4) {
+      break;
+    }
+  }
+
+  return result;
 }
 
 void loop(void) {
-  digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
-  delay(500);                      // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
+  digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on
+  delay(500);                      // wait for a half second
+  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off
   delay(500);  
 
   uint8_t success;
@@ -113,7 +142,7 @@ void loop(void) {
 
   // Wait for an NTAG203 card.  When one is found 'uid' will be populated with
   // the UID, and uidLength will indicate the size of the UUID (normally 7)
-  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 500); // 0.5s timeout
 
   if (success) {
     // Display some basic information about the card
@@ -121,77 +150,35 @@ void loop(void) {
     Serial.print("  UID Length: ");Serial.print(uidLength, DEC);Serial.println(" bytes");
     Serial.print("  UID Value: ");
     nfc.PrintHex(uid, uidLength);
-    Serial.println("");
 
-    if (uidLength == 7)
-    {
-      uint8_t data[32];
-
-      // We probably have an NTAG2xx card (though it could be Ultralight as well)
-      Serial.println("Seems to be an NTAG2xx tag (7 byte UID)");
-
-      // NTAG2x3 cards have 39*4 bytes of user pages (156 user bytes),
-      // starting at page 4 ... larger cards just add pages to the end of
-      // this range:
-
-      // See: http://www.nxp.com/documents/short_data_sheet/NTAG203_SDS.pdf
-
-      // TAG Type       PAGES   USER START    USER STOP
-      // --------       -----   ----------    ---------
-      // NTAG 203       42      4             39
-      // NTAG 213       45      4             39
-      // NTAG 215       135     4             129
-      // NTAG 216       231     4             225
-
-      for (uint8_t i = 0; i < 42; i++)
-      {
-        success = nfc.ntag2xx_ReadPage(i, data);
-
-        // Display the current page number
-        Serial.print("PAGE ");
-        if (i < 10)
-        {
-          Serial.print("0");
-          Serial.print(i);
-        }
-        else
-        {
-          Serial.print(i);
-        }
-        Serial.print(": ");
-
-        // Display the results, depending on 'success'
-        if (success)
-        {
-          // Dump the page data
-          nfc.PrintHexChar(data, 4);
-        }
-        else
-        {
-          Serial.println("Unable to read the requested page!");
-        }
-      }
-    }
-    else
-    {
-      Serial.println("This doesn't seem to be an NTAG203 tag (UUID length != 7 bytes)!");
-    }
-
-    // Wait a bit before trying again
-    Serial.println("\n\nSend a character to scan another tag!");
-    Serial.flush();
-    while (!Serial.available());
-    while (Serial.available()) {
-    Serial.read(); 
-    }
-
-
-      digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
-      delay(500);                      // wait for a second
-      digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
-      delay(500); 
-
-    Serial.flush();
+    Serial.print("Tag Number: ");
+    Serial.println(readTagNumber(), DEC);
   }
+}
+
+/// File listing helper
+void printDirectory(File dir, int numTabs) {
+   while(true) {
+     
+     File entry =  dir.openNextFile();
+     if (! entry) {
+       // no more files
+       Serial.println("**nomorefiles**");
+       break;
+     }
+     for (uint8_t i=0; i<numTabs; i++) {
+       Serial.print('\t');
+     }
+     Serial.print(entry.name());
+     if (entry.isDirectory()) {
+       Serial.println("/");
+       printDirectory(entry, numTabs+1);
+     } else {
+       // files have sizes, directories do not
+       Serial.print("\t\t");
+       Serial.println(entry.size(), DEC);
+     }
+     entry.close();
+   }
 }
 
