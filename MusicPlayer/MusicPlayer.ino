@@ -36,7 +36,7 @@ D13 --- VS1053 (CLK)
 
 */
 
-#define PN532_IRQ   5 // For interrupts, but used as a manual digital input
+#define PN532_IRQ   2 // For interrupts. On the Nano V3, only pins 2 and 3 are for external interrupts
 #define PN532_RESET 6 
 #define PN532_CHIP_SELECT 10
 
@@ -64,7 +64,6 @@ void setup(void) {
     while (1);
   }
 
-  nfc.SAMConfig();
   pinMode(PN532_IRQ, INPUT_PULLUP);
 
   // Got ok data, print it out!
@@ -93,9 +92,7 @@ void setup(void) {
   Serial.println(F("Playing track"));
   musicPlayer.startPlayingFile("/test1.mp3");
 
-  nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
-  attachInterrupt(digitalPinToInterrupt(PN532_IRQ), cardDetectedInterrupt, FALLING); // TODO need to rewire IRQ to pin 2, because that's the only digital interrupt on the nano. 
-  // The '~' symbol means PWM, not interrupt.
+  attachInterrupt(digitalPinToInterrupt(PN532_IRQ), cardDetectedInterrupt, CHANGE);
 }
 
 uint8_t readAsASCII(uint8_t* data, int idx) {
@@ -145,22 +142,39 @@ void readCard() {
     Serial.print("Tag Number: ");
     Serial.println(readTagNumber(), DEC);
   }
+
+  // From line 171, https://github.com/adafruit/Adafruit-PN532/blob/master/Adafruit_PN532.cpp
+  nfc = Adafruit_PN532(PN532_CHIP_SELECT);
+  nfc.begin();
+  nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
 }
 
-volatile bool hasCard = false;
-int nfcInterruptState = HIGH;
+#define NO_CARD_CHANGE 0 
+#define CARD_DETECTED 1
+#define CARD_REMOVED 2
+
+volatile int cardTransition = NO_CARD_CHANGE;
 
 void loop() {
   delay(20);
-  if (hasCard) {
+  if (cardTransition == CARD_DETECTED) {
+    Serial.println("Detected NFC card");
     readCard();
-    hasCard = false;
+    cardTransition = NO_CARD_CHANGE;
+  } else if (cardTransition == CARD_REMOVED) {
+    Serial.println("NFC card removed");
+
+    nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
+    cardTransition = NO_CARD_CHANGE;
   }
 }
 
 void cardDetectedInterrupt() {
-  hasCard = true;
-  Serial.println("Detected card");
+  if (digitalRead(PN532_IRQ) == HIGH) {
+    cardTransition = CARD_REMOVED;
+  } else {
+    cardTransition = CARD_DETECTED;
+  }
 }
 
 
