@@ -34,6 +34,9 @@ D11 --- VS1053 (MOSI)
 D12 --- VS1053 (MISO)
 D13 --- VS1053 (CLK)
 
+// ###### Volume potentiometer ######
+A2 --- center
+
 */
 
 #define PN532_IRQ   2 // For interrupts. On the Nano V3, only pins 2 and 3 are for external interrupts
@@ -42,16 +45,25 @@ D13 --- VS1053 (CLK)
 
 #define VS1053_DREQ 3      // VS1053 Data request, on an interrupt pin
 #define VS1053_CARDCS 4     // Card chip select pin
-// DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
 #define VS1053_BREAKOUT_DCS    7      // VS1053 Data/command select pin (output)
 #define VS1053_BREAKOUT_RESET  8      // VS1053 reset pin (output)
 #define VS1053_BREAKOUT_CS    9     // VS1053 chip select pin (output)
+
+#define MAX98306_SHUTDOWN 5
+
+#define VOLUME_PIN A2
 
 // Both use hardware SPI
 Adafruit_PN532 nfc(PN532_CHIP_SELECT);
 Adafruit_VS1053_FilePlayer musicPlayer(VS1053_BREAKOUT_RESET, VS1053_BREAKOUT_CS, VS1053_BREAKOUT_DCS, VS1053_DREQ, VS1053_CARDCS);
 
 void setup(void) {
+  // avoid clicks on startup
+  pinMode(MAX98306_SHUTDOWN, OUTPUT);
+  digitalWrite(MAX98306_SHUTDOWN, LOW);
+
+  pinMode(VOLUME_PIN, INPUT);
+
   Serial.begin(115200);
 
   // For debugging, halt until a serial connection is established
@@ -90,7 +102,11 @@ void setup(void) {
 
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT); 
   Serial.println(F("Playing track"));
+
   musicPlayer.startPlayingFile("/test1.mp3");
+  
+  // enable audio amp.
+  digitalWrite(MAX98306_SHUTDOWN, HIGH);
 
   attachInterrupt(digitalPinToInterrupt(PN532_IRQ), cardDetectedInterrupt, CHANGE);
 }
@@ -155,6 +171,7 @@ void readCard() {
 
 volatile int cardTransition = NO_CARD_CHANGE;
 
+int lastVolume = -1;
 void loop() {
   delay(20);
   if (cardTransition == CARD_DETECTED) {
@@ -164,9 +181,20 @@ void loop() {
   } else if (cardTransition == CARD_REMOVED) {
     Serial.println("NFC card removed");
 
+    nfc.SAMConfig(); // From the source, this also sets up the IRQ pin.
     nfc.startPassiveTargetIDDetection(PN532_MIFARE_ISO14443A);
     cardTransition = NO_CARD_CHANGE;
   }
+
+  // Read and update volume
+  int volume = analogRead(VOLUME_PIN); // 0-1023
+  if (lastVolume == -1 || abs(lastVolume - volume) > 10) {
+    Serial.println(volume);
+    lastVolume = volume;
+    // Map 0-1023 to 0-255
+    musicPlayer.setVolume((uint8_t)(lastVolume / 4), (uint8_t)(lastVolume / 4));
+  }
+
 }
 
 void cardDetectedInterrupt() {
